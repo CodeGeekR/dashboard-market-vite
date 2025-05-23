@@ -1,0 +1,46 @@
+---
+// src/layouts/BaseLayout.astro
+// Este es el layout base para todas las páginas del sitio.
+// Incluye la configuración global del HTML, metadatos y la importación de estilos.
+
+// Props que el layout puede recibir (si se necesitaran en el futuro)
+// export interface Props {
+//   title?: string;
+//   description?: string;
+// }
+// const {
+//   title = "Dashboard de Trading de Criptomonedas",
+//   description = "Analiza precios y estrategias de tus criptomonedas favoritas en tiempo real."
+// } = Astro.props;
+
+const pageTitle = Astro.props.title || "Dashboard de Trading de Criptomonedas";
+const pageDescription = Astro.props.description || "Analiza precios y estrategias de tus criptomonedas favoritas en tiempo real con datos de Binance.";
+---
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- Metadatos SEO -->
+  <title>{pageTitle}</title>
+  <meta name="description" content={pageDescription} />
+  <!-- Open Graph tags (opcional, para compartir en redes sociales) -->
+  <!-- <meta property="og:title" content={pageTitle} /> -->
+  <!-- <meta property="og:description" content={pageDescription} /> -->
+  <!-- <meta property="og:type" content="website" /> -->
+  <!-- <meta property="og:image" content="/placeholder-image.jpg" /> -->
+
+  <!-- Favicon (ejemplo, asegúrate de tener el archivo en public/) -->
+  <!-- <link rel="icon" type="image/svg+xml" href="/favicon.svg" /> -->
+
+  <!-- Enlace a la hoja de estilos global (contiene Tailwind) -->
+  <link rel="stylesheet" href="/src/styles/globals.css">
+
+  <!-- Si se usa Chart.js u otras librerías con CSS propio, se enlazarían aquí o se importarían en los componentes -->
+</head>
+<body class="bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+  <!-- Slot para el contenido de cada página -->
+  <slot />
+</body>
+</html>
