@@ -1,0 +1,154 @@
+---
+// src/components/Dashboard/PriceChart.astro
+import { fetchKlines } from '../../scripts/binanceAPI.js'; // Ajusta la ruta
+
+export interface Props {
+  symbol: string;
+  chartTitle?: string;
+  canvasId?: string; // Para asegurar IDs únicos si hay múltiples gráficas
+}
+
+const { symbol, chartTitle = `Historial de Precios ${symbol}`, canvasId = `chart-${symbol}-${Date.now()}` } = Astro.props;
+
+let klinesData = [];
+let error = null;
+let isLoading = true;
+
+try {
+  // Obtener datos de los últimos 30 días, velas diarias
+  klinesData = await fetchKlines(symbol, '1d', 30);
+} catch (e) {
+  console.error(`Error cargando datos de klines para ${symbol}:`, e.message);
+  error = `No se pudieron cargar los datos del gráfico para ${symbol}.`;
+} finally {
+  isLoading = false;
+}
+
+// Preparar datos para Chart.js
+const labels = klinesData.map(kline => new Date(kline.closeTime).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }));
+const dataPoints = klinesData.map(kline => kline.close);
+
+const chartConfig = {
+  type: 'line', // Tipo de gráfica
+  data: {
+    labels: labels,
+    datasets: [{
+      label: `Precio de Cierre (${symbol})`,
+      data: dataPoints,
+      borderColor: 'rgba(54, 162, 235, 1)', // Azul
+      backgroundColor: 'rgba(54, 162, 235, 0.2)',
+      borderWidth: 2,
+      tension: 0.1, // Líneas ligeramente curvas
+      fill: true,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false, // Para controlar mejor el tamaño con un div contenedor
+    scales: {
+      x: {
+        title: {
+          display: true,
+          text: 'Fecha',
+          color: '#333' // Color del título del eje X
+        },
+        ticks: {
+          color: '#333', // Color de las etiquetas del eje X
+          maxRotation: 45,
+          minRotation: 45,
+        }
+      },
+      y: {
+        title: {
+          display: true,
+          text: 'Precio (USD)', // Asumimos USD
+          color: '#333'
+        },
+        ticks: {
+          color: '#333',
+          // Formatear ticks del eje Y como moneda
+          callback: function(value) {
+            return value.toLocaleString('es-ES', { style: 'currency', currency: 'USD' });
+          }
+        }
+      }
+    },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: {
+          color: '#333' // Color de las etiquetas de la leyenda
+        }
+      },
+      tooltip: {
+        enabled: true,
+        mode: 'index',
+        intersect: false,
+        callbacks: {
+          label: function(context) {
+            let label = context.dataset.label || '';
+            if (label) {
+              label += ': ';
+            }
+            if (context.parsed.y !== null) {
+              label += context.parsed.y.toLocaleString('es-ES', { style: 'currency', currency: 'USD' });
+            }
+            return label;
+          }
+        }
+      }
+    }
+  }
+};
+---
+
+<div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md min-h-[350px] md:min-h-[450px]">
+  <h3 class="text-xl font-semibold text-gray-700 dark:text-white mb-3">{chartTitle}</h3>
+  {isLoading && (
+    <div class="flex justify-center items-center h-full min-h-[300px]">
+      <p class="text-gray-500 dark:text-gray-400">Cargando datos del gráfico...</p>
+      {/* Podrías añadir un spinner SVG aquí */}
+    </div>
+  )}
+  {error && !isLoading && (
+    <div class="flex justify-center items-center h-full min-h-[300px] bg-red-50 dark:bg-red-900 p-3 rounded-md">
+      <p class="text-red-500 dark:text-red-400">{error}</p>
+    </div>
+  )}
+  {!isLoading && !error && klinesData.length > 0 && (
+    <div class="relative h-[300px] md:h-[400px]"> {/* Contenedor para controlar el tamaño del canvas */}
+      <canvas id={canvasId}></canvas>
+    </div>
+  )}
+  {!isLoading && !error && klinesData.length === 0 && (
+     <div class="flex justify-center items-center h-full min-h-[300px]">
+      <p class="text-gray-500 dark:text-gray-400">No hay datos disponibles para mostrar en el gráfico.</p>
+    </div>
+  )}
+</div>
+
+<script define:vars={{ canvasId, chartConfig }}>
+  // Este script se ejecuta en el cliente
+  import { Chart, LineController, LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend, Filler } from 'chart.js/auto'; 
+  // Si se usa TimeScale, a veces se necesita un adaptador de fechas, aunque Chart.js v4 es más permisivo.
+  // import { es } from 'date-fns/locale';
+  // import 'chartjs-adapter-date-fns'; // Descomentar si es necesario y está instalado
+  // Chart.defaults.locale = 'es'; // Para formato de fechas en español en la gráfica, si el adaptador lo soporta
+
+  // Verificar que el DOM esté listo (Astro maneja esto bien para scripts en componentes)
+  document.addEventListener('DOMContentLoaded', () => {
+    const ctx = document.getElementById(canvasId);
+    if (ctx) {
+      // Asegurarse de que no haya una instancia previa de Chart en este canvas
+      // Esto es importante si el componente se re-renderiza o en navegación SPA
+      let existingChart = Chart.getChart(canvasId);
+      if (existingChart) {
+        existingChart.destroy();
+      }
+      new Chart(ctx, chartConfig);
+    } else {
+      console.error(`Canvas con ID ${canvasId} no encontrado.`);
+    }
+  });
+</script>

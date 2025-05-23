@@ -1,0 +1,225 @@
+---
+// src/components/Dashboard/CryptoCard.astro
+import { getTicker24hr, fetchKlines } from '../../scripts/binanceAPI.js';
+import { calculateSMA, calculateRSI, calculateMACD } from '../../scripts/technicalIndicators.js';
+
+export interface Props {
+  coinName: string; // Nombre legible, ej: "Bitcoin"
+  symbol: string;   // Símbolo para la API, ej: "BTCUSDT"
+  iconUrl?: string;  // URL opcional para un ícono
+}
+
+const { coinName, symbol, iconUrl } = Astro.props;
+
+// Estado para los datos del ticker 24hr
+let tickerData;
+let tickerError = null;
+let isLoadingTicker = true;
+
+// Estado para los datos de klines e indicadores
+let klinesData = [];
+let klinesError = null;
+let isLoadingKlines = true; // Estado de carga para klines e indicadores
+let klinesDataLoaded = false; // Indica si los klines y los indicadores se cargaron y procesaron
+
+// Variables para los indicadores
+let currentSMA20 = null;
+let currentRSI14 = null;
+let currentMACD = { macdLine: null, signalLine: null, histogram: null };
+
+try {
+  // Obtener datos del ticker 24hr (precio actual, cambio 24h, etc.)
+  tickerData = await getTicker24hr(symbol);
+} catch (e) {
+  console.error(`Error cargando datos de ticker para ${coinName} (${symbol}):`, e.message);
+  tickerError = `No se pudieron cargar los datos principales para ${coinName}. Detalles: ${e.message}`;
+} finally {
+  isLoadingTicker = false;
+}
+
+// Solo intentar cargar klines e indicadores si la carga del ticker fue exitosa
+if (!tickerError) {
+  try {
+    // Obtener datos de klines (velas diarias, últimos 100 días)
+    // Se necesitan suficientes datos para que los indicadores (especialmente SMA20 y MACD) sean significativos.
+    const rawKlines = await fetchKlines(symbol, '1d', 100); 
+    klinesData = rawKlines; // Guardar para posible uso futuro, aunque solo necesitamos precios de cierre aquí
+
+    if (klinesData.length > 0) {
+      const closePrices = klinesData.map(k => k.close); // Extraer precios de cierre
+
+      // Calcular SMA 20
+      const sma20Values = calculateSMA(closePrices, 20);
+      if (sma20Values.length > 0) {
+        currentSMA20 = sma20Values[sma20Values.length - 1];
+      }
+
+      // Calcular RSI 14
+      const rsi14Values = calculateRSI(closePrices, 14);
+      if (rsi14Values.length > 0) {
+        currentRSI14 = rsi14Values[rsi14Values.length - 1];
+      }
+
+      // Calcular MACD (12, 26, 9)
+      const macdResult = calculateMACD(closePrices, 12, 26, 9);
+      if (macdResult.macdLine.length > 0) { // Verificar si se pudo calcular
+        currentMACD.macdLine = macdResult.macdLine[macdResult.macdLine.length - 1];
+        currentMACD.signalLine = macdResult.signalLine[macdResult.signalLine.length - 1];
+        currentMACD.histogram = macdResult.histogram[macdResult.histogram.length - 1];
+      }
+      klinesDataLoaded = true; // Marcar que los datos de klines e indicadores están listos
+    } else {
+      // No hay suficientes datos de klines para los indicadores
+      klinesError = `No hay suficientes datos históricos para calcular indicadores para ${coinName}.`;
+      console.warn(klinesError);
+    }
+  } catch (e) {
+    console.error(`Error cargando klines o calculando indicadores para ${coinName} (${symbol}):`, e.message);
+    klinesError = `Error al procesar indicadores para ${coinName}. Detalles: ${e.message}`;
+  } finally {
+    isLoadingKlines = false;
+  }
+} else {
+  // Si falló la carga del ticker, no cargamos klines.
+  isLoadingKlines = false; 
+}
+
+
+const formatPrice = (price) => {
+  if (price === undefined || price === null || isNaN(price)) return 'N/A';
+  return price.toLocaleString('es-ES', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const priceChangePercentValue = tickerData?.priceChangePercent; 
+const isPositiveChange = priceChangePercentValue !== undefined && priceChangePercentValue !== null ? priceChangePercentValue >= 0 : null;
+const changeIcon = isPositiveChange === null ? '' : (isPositiveChange ? '▲' : '▼');
+const changeColorClass = isPositiveChange === null ? 'text-gray-500 dark:text-gray-400' : (isPositiveChange ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400');
+const formattedPriceChange = tickerData?.priceChange !== undefined && tickerData?.priceChange !== null ? formatPrice(tickerData.priceChange) : 'N/A';
+
+// Determinar si hay algún indicador para mostrar
+const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || currentMACD.macdLine !== null;
+---
+
+<div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl flex flex-col min-h-[420px]"> {/* Altura mínima aumentada para indicadores */}
+  <div class="flex items-center mb-4">
+    {iconUrl && <img src={iconUrl} alt={`${coinName} logo`} class="w-10 h-10 mr-3 rounded-full"/>}
+    <div>
+      <h2 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">{coinName}</h2>
+      <span class="text-xs sm:text-sm text-gray-500 dark:text-gray-400">({symbol})</span>
+    </div>
+  </div>
+
+  <div class="flex-grow">
+    {isLoadingTicker && ( // Mostrar carga principal solo para el ticker
+      <div class="text-center py-4">
+        <p class="text-gray-500 dark:text-gray-400 text-lg">Cargando datos principales...</p>
+        <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mt-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+    )}
+
+    {tickerError && !isLoadingTicker && ( // Error principal del ticker
+      <div class="text-center py-4 bg-red-50 dark:bg-red-900 p-3 rounded-md">
+        <p class="text-red-600 dark:text-red-300 font-semibold">Error de Carga Principal</p>
+        <p class="text-red-500 dark:text-red-400 text-sm mt-1">{tickerError}</p>
+      </div>
+    )}
+
+    {!isLoadingTicker && !tickerError && tickerData && ( // Si los datos del ticker están listos y sin error
+      <>
+        <div>
+          <p class="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-1">
+            {formatPrice(tickerData.lastPrice)}
+          </p>
+          <div class:list={['flex items-center text-lg', changeColorClass]}>
+            <span>{changeIcon} {priceChangePercentValue !== undefined && priceChangePercentValue !== null ? priceChangePercentValue.toFixed(2) : '0.00'}%</span>
+            <span class="ml-2">({formattedPriceChange})</span>
+            <span class="ml-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">24h</span>
+          </div>
+        </div>
+        
+        <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300">
+          <div class="flex justify-between py-1">
+            <span>Volumen (24h):</span>
+            <span class="font-medium">{tickerData.volume ? parseFloat(tickerData.volume).toLocaleString('es-ES', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'N/A'} {symbol.replace(/USDT$|BUSD$|EUR$|GBP$|DAI$|ETH$|BTC$/, '')}</span>
+          </div>
+          <div class="flex justify-between py-1">
+            <span>Máx (24h):</span>
+            <span class="font-medium">{formatPrice(tickerData.highPrice)}</span>
+          </div>
+          <div class="flex justify-between py-1">
+            <span>Mín (24h):</span>
+            <span class="font-medium">{formatPrice(tickerData.lowPrice)}</span>
+          </div>
+        </div>
+
+        {/* Sección de Indicadores Técnicos */}
+        {isLoadingKlines && ( // Estado de carga para indicadores
+          <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 text-center">
+            <p class="text-gray-500 dark:text-gray-400 text-sm">Cargando indicadores...</p>
+          </div>
+        )}
+
+        {!isLoadingKlines && klinesError && ( // Error al cargar/calcular indicadores
+          <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 text-center bg-orange-50 dark:bg-orange-900 p-2 rounded-md">
+            <p class="text-orange-600 dark:text-orange-300 text-sm font-semibold">Aviso sobre Indicadores</p>
+            <p class="text-orange-500 dark:text-orange-400 text-xs mt-1">{klinesError}</p>
+          </div>
+        )}
+        
+        {!isLoadingKlines && !klinesError && klinesDataLoaded && (
+          <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+            <h4 class="text-md font-semibold text-gray-700 dark:text-white mb-2">Indicadores Técnicos (Diario)</h4>
+            {hasAnyIndicator ? (
+              <ul class="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                {currentSMA20 !== null && (
+                  <li title="Media Móvil Simple (20 períodos): Precio promedio durante los últimos 20 días. Ayuda a identificar la tendencia.">
+                    <strong>SMA (20):</strong> {currentSMA20.toFixed(2)}
+                    {tickerData?.lastPrice && (
+                      <span class:list={["ml-1 text-xs", tickerData.lastPrice > currentSMA20 ? 'text-green-500' : 'text-red-500']}>
+                        ({tickerData.lastPrice > currentSMA20 ? 'Precio por encima' : 'Precio por debajo'})
+                      </span>
+                    )}
+                  </li>
+                )}
+                {currentRSI14 !== null && (
+                  <li title="Índice de Fuerza Relativa (14 períodos): Mide la velocidad y el cambio de los movimientos de precios. Sobre 70 puede indicar sobrecompra, bajo 30 sobreventa.">
+                    <strong>RSI (14):</strong> {currentRSI14.toFixed(2)}
+                    {currentRSI14 > 70 && <span class="ml-1 text-xs text-orange-500">(Sobrecompra)</span>}
+                    {currentRSI14 < 30 && <span class="ml-1 text-xs text-purple-500">(Sobreventa)</span>}
+                  </li>
+                )}
+                {currentMACD && currentMACD.macdLine !== null && currentMACD.signalLine !== null && currentMACD.histogram !== null && (
+                  <li title="Convergencia/Divergencia de Medias Móviles (12,26,9): Muestra la relación entre dos medias móviles de precios. Ayuda a identificar cambios en el momentum, dirección y duración de una tendencia.">
+                    <strong>MACD (12,26,9):</strong>
+                    <ul class="list-none list-inside ml-2 space-y-0.5"> {/* Usar list-none y controlar padding/margin si es necesario */}
+                      <li class="flex justify-between items-center"><span>Línea:</span> <span class="font-medium">{currentMACD.macdLine.toFixed(2)}</span></li>
+                      <li class="flex justify-between items-center"><span>Señal:</span> <span class="font-medium">{currentMACD.signalLine.toFixed(2)}</span></li>
+                      <li class="flex justify-between items-center"><span>Histograma:</span> <span class="font-medium">{currentMACD.histogram.toFixed(2)}</span></li>
+                      {currentMACD.macdLine > currentMACD.signalLine && <li class="text-xs text-green-500 text-right w-full mt-0.5">Cruce Alcista</li>}
+                      {currentMACD.macdLine < currentMACD.signalLine && <li class="text-xs text-red-500 text-right w-full mt-0.5">Cruce Bajista</li>}
+                    </ul>
+                  </li>
+                )}
+              </ul>
+            ) : (
+              <p class="text-xs text-gray-400 dark:text-gray-500 italic">No hay suficientes datos para calcular todos los indicadores.</p>
+            )}
+          </div>
+        )}
+      </>
+    )}
+  </div>
+</div>
+
+<style>
+  /* Se puede ajustar el estilo del tooltip por defecto del navegador o usar una librería de tooltips si se necesita más control */
+  [title] {
+    cursor: help; /* Para indicar que hay un tooltip */
+    text-decoration-style: dotted; /* Opcional: para subrayar que tiene tooltip */
+    text-decoration-line: underline;
+    text-decoration-skip-ink: none; /* Para que el subrayado no se corte en letras como 'g' o 'p' */
+  }
+</style>

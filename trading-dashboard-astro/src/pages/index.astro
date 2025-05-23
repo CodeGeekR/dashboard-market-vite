@@ -1,0 +1,110 @@
+---
+// src/pages/index.astro
+// Esta es la página principal del dashboard. Muestra tarjetas de información y gráficas para criptomonedas seleccionadas.
+import BaseLayout from '../layouts/BaseLayout.astro';
+import CryptoCard from '../components/Dashboard/CryptoCard.astro';
+import PriceChart from '../components/Dashboard/PriceChart.astro';
+
+// Título y descripción para esta página específica
+const pageTitle = "Dashboard de Criptomonedas | Análisis en Tiempo Real";
+const pageDescription = "Sigue el rendimiento de tus criptomonedas favoritas con datos actualizados y análisis técnico.";
+
+// Lista de criptomonedas para mostrar en el dashboard.
+// Se omite iconUrl para simplificar, ya que CryptoCard.astro lo maneja como opcional.
+const cryptoList = [
+  { name: "Bitcoin", symbol: "BTCUSDT" },
+  { name: "Ethereum", symbol: "ETHUSDT" },
+  { name: "Filecoin", symbol: "FILUSDT" },
+  { name: "Fetch.ai", symbol: "FETUSDT" },
+  { name: "Cardano", symbol: "ADAUSDT" }
+];
+---
+<BaseLayout title={pageTitle} description={pageDescription}>
+  <main class="container mx-auto p-4 sm:p-6 lg:p-8"> {/* Espaciado adaptable */}
+    <header class="mb-8 text-center">
+      <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-blue-700 dark:text-blue-400">
+        Panel de Control de Criptomonedas
+      </h1>
+      <p class="text-md sm:text-lg text-gray-600 dark:text-gray-300 mt-2">
+        Análisis de mercado y técnico para criptomonedas líderes.
+      </p>
+    </header>
+
+    {/* Grid para mostrar las tarjetas y gráficas de cada criptomoneda */}
+    {/* Se usa un grid de 1 columna en móviles y 2 columnas en pantallas grandes (lg) */}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+      {cryptoList.map(crypto => (
+        // Contenedor para cada par de CryptoCard y PriceChart
+        <div class="flex flex-col bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden p-1 transform transition-all duration-300 hover:shadow-lg">
+          {/* Tarjeta con información general y técnica de la criptomoneda */}
+          <div class="p-4 sm:p-5"> {/* Padding interno para la tarjeta */}
+            <CryptoCard
+              coinName={crypto.name}
+              symbol={crypto.symbol}
+              // iconUrl no se pasa, ya que es opcional y se ha decidido omitirlo.
+            />
+          </div>
+          
+          {/* Gráfica de historial de precios */}
+          {/* Se añade un borde superior y un padding para separar visualmente la gráfica de la tarjeta */}
+          <div class="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2 p-4 sm:p-5">
+            <PriceChart
+              symbol={crypto.symbol}
+              chartTitle={`Historial de ${crypto.name} (${crypto.symbol})`}
+              canvasId={`chart-${crypto.symbol}`} {/* ID único para cada canvas */}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+
+    {/* Nota sobre la actualización de datos */}
+    <div class="mt-10 p-4 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-md text-center">
+      <p class="text-sm text-blue-700 dark:text-blue-300">
+        <strong>Nota sobre los Datos:</strong> Los datos mostrados se cargan cuando la página es generada. 
+        Para actualizaciones en tiempo real, sería necesario implementar lógica del lado del cliente 
+        (JavaScript) para obtener y refrescar los datos periódicamente.
+      </p>
+    </div>
+    
+    {/* Sección de advertencia sobre problemas de entorno (mantenida si es relevante) */}
+    <div class="mt-8 p-4 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-md">
+      <p class="text-yellow-700 dark:text-yellow-200 text-sm">
+        <strong>Aviso de Entorno:</strong> La configuración inicial del proyecto (instalación de dependencias con `npm install`) no pudo completarse debido a limitaciones del entorno de ejecución. Se asume que las dependencias (`astro`, `@astrojs/tailwind`, `tailwindcss`, `chart.js`) estarían disponibles en un entorno de desarrollo/producción estándar.
+      </p>
+    </div>
+  </main>
+</BaseLayout>
+
+<style is:global>
+  /* Estilos globales adicionales si fueran necesarios, por ejemplo, para asegurar que el body o html tengan altura completa */
+  /*
+  html, body {
+    min-height: 100vh;
+    background-color: theme('colors.gray.100');
+  }
+  body.dark {
+    background-color: theme('colors.gray.900');
+  }
+  */
+
+  /* Mejorar el aspecto del scrollbar (opcional, puede ser específico del navegador) */
+  /*
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: theme('colors.gray.200');
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: theme('colors.blue.500');
+    border-radius: 4px;
+  }
+  body.dark ::-webkit-scrollbar-track {
+    background: theme('colors.gray.700');
+  }
+  body.dark ::-webkit-scrollbar-thumb {
+    background-color: theme('colors.blue.400');
+  }
+  */
+</style>
