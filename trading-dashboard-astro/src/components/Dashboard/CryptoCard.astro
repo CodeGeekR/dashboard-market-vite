@@ -19,8 +19,8 @@ let isLoadingTicker = true;
 // Estado para los datos de klines e indicadores
 let klinesData = [];
 let klinesError = null;
-let isLoadingKlines = true; // Estado de carga para klines e indicadores
-let klinesDataLoaded = false; // Indica si los klines y los indicadores se cargaron y procesaron
+let isLoadingKlines = true; 
+let klinesDataLoaded = false;
 
 // Variables para los indicadores
 let currentSMA20 = null;
@@ -28,7 +28,6 @@ let currentRSI14 = null;
 let currentMACD = { macdLine: null, signalLine: null, histogram: null };
 
 try {
-  // Obtener datos del ticker 24hr (precio actual, cambio 24h, etc.)
   tickerData = await getTicker24hr(symbol);
 } catch (e) {
   console.error(`Error cargando datos de ticker para ${coinName} (${symbol}):`, e.message);
@@ -37,39 +36,32 @@ try {
   isLoadingTicker = false;
 }
 
-// Solo intentar cargar klines e indicadores si la carga del ticker fue exitosa
 if (!tickerError) {
   try {
-    // Obtener datos de klines (velas diarias, últimos 100 días)
-    // Se necesitan suficientes datos para que los indicadores (especialmente SMA20 y MACD) sean significativos.
     const rawKlines = await fetchKlines(symbol, '1d', 100); 
-    klinesData = rawKlines; // Guardar para posible uso futuro, aunque solo necesitamos precios de cierre aquí
+    klinesData = rawKlines;
 
     if (klinesData.length > 0) {
-      const closePrices = klinesData.map(k => k.close); // Extraer precios de cierre
+      const closePrices = klinesData.map(k => k.close);
 
-      // Calcular SMA 20
       const sma20Values = calculateSMA(closePrices, 20);
       if (sma20Values.length > 0) {
         currentSMA20 = sma20Values[sma20Values.length - 1];
       }
 
-      // Calcular RSI 14
       const rsi14Values = calculateRSI(closePrices, 14);
       if (rsi14Values.length > 0) {
         currentRSI14 = rsi14Values[rsi14Values.length - 1];
       }
 
-      // Calcular MACD (12, 26, 9)
       const macdResult = calculateMACD(closePrices, 12, 26, 9);
-      if (macdResult.macdLine.length > 0) { // Verificar si se pudo calcular
+      if (macdResult.macdLine.length > 0) {
         currentMACD.macdLine = macdResult.macdLine[macdResult.macdLine.length - 1];
         currentMACD.signalLine = macdResult.signalLine[macdResult.signalLine.length - 1];
         currentMACD.histogram = macdResult.histogram[macdResult.histogram.length - 1];
       }
-      klinesDataLoaded = true; // Marcar que los datos de klines e indicadores están listos
+      klinesDataLoaded = true;
     } else {
-      // No hay suficientes datos de klines para los indicadores
       klinesError = `No hay suficientes datos históricos para calcular indicadores para ${coinName}.`;
       console.warn(klinesError);
     }
@@ -80,10 +72,8 @@ if (!tickerError) {
     isLoadingKlines = false;
   }
 } else {
-  // Si falló la carga del ticker, no cargamos klines.
   isLoadingKlines = false; 
 }
-
 
 const formatPrice = (price) => {
   if (price === undefined || price === null || isNaN(price)) return 'N/A';
@@ -96,11 +86,18 @@ const changeIcon = isPositiveChange === null ? '' : (isPositiveChange ? '▲' : 
 const changeColorClass = isPositiveChange === null ? 'text-gray-500 dark:text-gray-400' : (isPositiveChange ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400');
 const formattedPriceChange = tickerData?.priceChange !== undefined && tickerData?.priceChange !== null ? formatPrice(tickerData.priceChange) : 'N/A';
 
-// Determinar si hay algún indicador para mostrar
 const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || currentMACD.macdLine !== null;
+
+// Generar IDs únicos para los elementos que se actualizarán en el cliente
+const priceId = `price-${symbol}`;
+const priceChangeIndicatorId = `price-change-indicator-${symbol}`;
+const priceChangePercentTextId = `price-change-percent-text-${symbol}`;
+const priceChangeValueId = `price-change-value-${symbol}`;
+const priceChangeIconId = `price-change-icon-${symbol}`;
+
 ---
 
-<div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl flex flex-col min-h-[420px]"> {/* Altura mínima aumentada para indicadores */}
+<div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl flex flex-col min-h-[420px]">
   <div class="flex items-center mb-4">
     {iconUrl && <img src={iconUrl} alt={`${coinName} logo`} class="w-10 h-10 mr-3 rounded-full"/>}
     <div>
@@ -110,7 +107,7 @@ const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || curren
   </div>
 
   <div class="flex-grow">
-    {isLoadingTicker && ( // Mostrar carga principal solo para el ticker
+    {isLoadingTicker && (
       <div class="text-center py-4">
         <p class="text-gray-500 dark:text-gray-400 text-lg">Cargando datos principales...</p>
         <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mt-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -120,22 +117,27 @@ const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || curren
       </div>
     )}
 
-    {tickerError && !isLoadingTicker && ( // Error principal del ticker
+    {tickerError && !isLoadingTicker && (
       <div class="text-center py-4 bg-red-50 dark:bg-red-900 p-3 rounded-md">
         <p class="text-red-600 dark:text-red-300 font-semibold">Error de Carga Principal</p>
         <p class="text-red-500 dark:text-red-400 text-sm mt-1">{tickerError}</p>
       </div>
     )}
 
-    {!isLoadingTicker && !tickerError && tickerData && ( // Si los datos del ticker están listos y sin error
+    {!isLoadingTicker && !tickerError && tickerData && (
       <>
         <div>
-          <p class="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-1">
+          <p id={priceId} class="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-1">
             {formatPrice(tickerData.lastPrice)}
           </p>
-          <div class:list={['flex items-center text-lg', changeColorClass]}>
-            <span>{changeIcon} {priceChangePercentValue !== undefined && priceChangePercentValue !== null ? priceChangePercentValue.toFixed(2) : '0.00'}%</span>
-            <span class="ml-2">({formattedPriceChange})</span>
+          <div id={priceChangeIndicatorId} class:list={['flex items-center text-lg', changeColorClass]}>
+            <span id={priceChangeIconId} class="change-icon">{changeIcon}</span>
+            <span id={priceChangePercentTextId} class="change-percent-text ml-1">
+              {priceChangePercentValue !== undefined && priceChangePercentValue !== null ? priceChangePercentValue.toFixed(2) : '0.00'}%
+            </span>
+            <span id={priceChangeValueId} class="ml-2">
+              ({formattedPriceChange})
+            </span>
             <span class="ml-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">24h</span>
           </div>
         </div>
@@ -155,14 +157,13 @@ const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || curren
           </div>
         </div>
 
-        {/* Sección de Indicadores Técnicos */}
-        {isLoadingKlines && ( // Estado de carga para indicadores
+        {isLoadingKlines && (
           <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 text-center">
             <p class="text-gray-500 dark:text-gray-400 text-sm">Cargando indicadores...</p>
           </div>
         )}
 
-        {!isLoadingKlines && klinesError && ( // Error al cargar/calcular indicadores
+        {!isLoadingKlines && klinesError && (
           <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 text-center bg-orange-50 dark:bg-orange-900 p-2 rounded-md">
             <p class="text-orange-600 dark:text-orange-300 text-sm font-semibold">Aviso sobre Indicadores</p>
             <p class="text-orange-500 dark:text-orange-400 text-xs mt-1">{klinesError}</p>
@@ -194,7 +195,7 @@ const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || curren
                 {currentMACD && currentMACD.macdLine !== null && currentMACD.signalLine !== null && currentMACD.histogram !== null && (
                   <li title="Convergencia/Divergencia de Medias Móviles (12,26,9): Muestra la relación entre dos medias móviles de precios. Ayuda a identificar cambios en el momentum, dirección y duración de una tendencia.">
                     <strong>MACD (12,26,9):</strong>
-                    <ul class="list-none list-inside ml-2 space-y-0.5"> {/* Usar list-none y controlar padding/margin si es necesario */}
+                    <ul class="list-none list-inside ml-2 space-y-0.5">
                       <li class="flex justify-between items-center"><span>Línea:</span> <span class="font-medium">{currentMACD.macdLine.toFixed(2)}</span></li>
                       <li class="flex justify-between items-center"><span>Señal:</span> <span class="font-medium">{currentMACD.signalLine.toFixed(2)}</span></li>
                       <li class="flex justify-between items-center"><span>Histograma:</span> <span class="font-medium">{currentMACD.histogram.toFixed(2)}</span></li>
@@ -215,11 +216,90 @@ const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || curren
 </div>
 
 <style>
-  /* Se puede ajustar el estilo del tooltip por defecto del navegador o usar una librería de tooltips si se necesita más control */
   [title] {
-    cursor: help; /* Para indicar que hay un tooltip */
-    text-decoration-style: dotted; /* Opcional: para subrayar que tiene tooltip */
+    cursor: help;
+    text-decoration-style: dotted;
     text-decoration-line: underline;
-    text-decoration-skip-ink: none; /* Para que el subrayado no se corte en letras como 'g' o 'p' */
+    text-decoration-skip-ink: none;
   }
 </style>
+
+<script define:vars={{ 
+  symbol_for_client: symbol, // Renombrado para evitar conflicto con la variable 'symbol' de JS
+  priceId,
+  priceChangeIndicatorId,
+  priceChangePercentTextId,
+  priceChangeValueId,
+  priceChangeIconId
+}}>
+  // src/components/Dashboard/CryptoCard.astro CLIENT SCRIPT
+  import { getTicker24hr } from '../../scripts/binanceAPI.js';
+
+  // Los IDs son pasados directamente desde define:vars
+  const priceEl = document.getElementById(priceId);
+  const priceChangeIndicatorContainerEl = document.getElementById(priceChangeIndicatorId);
+  const priceChangePercentTextEl = document.getElementById(priceChangePercentTextId);
+  const priceChangeValueEl = document.getElementById(priceChangeValueId);
+  const priceChangeIconEl = document.getElementById(priceChangeIconId);
+
+  const formatPriceForClient = (priceStr, currency = 'USD') => {
+    const price = parseFloat(priceStr); // El precio de la API es string
+    if (price === undefined || price === null || isNaN(price)) return 'N/A';
+    return price.toLocaleString('es-ES', { style: 'currency', currency: currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  
+  async function updatePriceDisplay() {
+    if (!symbol_for_client || !priceEl || !priceChangePercentTextEl || !priceChangeValueEl || !priceChangeIndicatorContainerEl || !priceChangeIconEl) {
+      // console.warn(`Elementos del DOM no encontrados para ${symbol_for_client}, deteniendo actualizaciones.`);
+      // clearInterval(priceUpdateInterval); // Opcional: detener si los elementos no están.
+      return;
+    }
+
+    try {
+      const newData = await getTicker24hr(symbol_for_client);
+      if (!newData) return;
+
+      // Actualizar precio
+      priceEl.textContent = formatPriceForClient(newData.lastPrice);
+
+      // Actualizar cambio de precio
+      const newPriceChangePercent = parseFloat(newData.priceChangePercent);
+      const newIsPositiveChange = newPriceChangePercent >= 0;
+      const newChangeIcon = newIsPositiveChange ? '▲' : '▼';
+      
+      priceChangeIconEl.textContent = newChangeIcon;
+      priceChangePercentTextEl.textContent = `${newPriceChangePercent.toFixed(2)}%`;
+      priceChangeValueEl.textContent = `(${formatPriceForClient(newData.priceChange)})`;
+
+      // Actualizar clases de color del contenedor del indicador
+      const colorClassesToRemove = ['text-green-500', 'dark:text-green-400', 'text-red-500', 'dark:text-red-400', 'text-gray-500', 'dark:text-gray-400'];
+      priceChangeIndicatorContainerEl.classList.remove(...colorClassesToRemove);
+      
+      if (newIsPositiveChange) {
+        priceChangeIndicatorContainerEl.classList.add('text-green-500', 'dark:text-green-400');
+      } else {
+        priceChangeIndicatorContainerEl.classList.add('text-red-500', 'dark:text-red-400');
+      }
+
+    } catch (error) {
+      console.error(`Error actualizando datos para ${symbol_for_client} en cliente:`, error.message);
+      // Considerar un indicador visual de error más sutil si las actualizaciones fallan.
+      // Por ejemplo, cambiar el color del precio a un gris tenue o añadir un pequeño icono de advertencia.
+    }
+  }
+
+  // Iniciar actualizaciones periódicas.
+  // Se llama una vez al inicio para asegurar que los datos estén lo más actualizados posible,
+  // especialmente si la generación de la página (SSG) fue hace tiempo.
+  // Sin embargo, esto puede causar un pequeño "flash" si los datos cambiaron justo entre el renderizado del servidor y esta llamada.
+  // updatePriceDisplay(); // Opcional: llamar al inicio
+
+  const priceUpdateInterval = setInterval(updatePriceDisplay, 5000); // Actualiza cada 5 segundos
+
+  // Limpieza para Astro View Transitions
+  // Si se usan View Transitions, es importante limpiar los intervalos para evitar múltiples
+  // intervalos ejecutándose para el mismo componente si se navega hacia adelante y atrás.
+  document.addEventListener('astro:before-swap', () => {
+    clearInterval(priceUpdateInterval);
+  });
+</script>
