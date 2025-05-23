@@ -10,7 +10,7 @@ export interface Props {
 
 const { symbol, chartTitle = `Historial de Precios ${symbol}`, canvasId = `chart-${symbol}-${Date.now()}` } = Astro.props;
 
-let initialKlinesData = []; // Renombrado para claridad, estos son los datos originales
+let initialKlinesData = []; // Datos originales para la carga inicial
 let error = null;
 let isLoading = true;
 
@@ -32,10 +32,10 @@ const dataPoints = initialKlinesData.map(kline => kline.close);
 const chartConfig = {
   type: 'line',
   data: {
-    labels: labels, // Labels para la visualización inicial (ej. "15 Jun")
+    labels: labels,
     datasets: [{
       label: `Precio de Cierre (${symbol})`,
-      data: dataPoints, // Puntos de datos para la visualización inicial
+      data: dataPoints,
       borderColor: 'rgba(54, 162, 235, 1)',
       backgroundColor: 'rgba(54, 162, 235, 0.2)',
       borderWidth: 2,
@@ -48,7 +48,7 @@ const chartConfig = {
     maintainAspectRatio: false,
     scales: {
       x: {
-        title: { display: true, text: 'Fecha', color: '#6b7280' }, // Gris para modo oscuro y claro
+        title: { display: true, text: 'Fecha', color: '#6b7280' },
         ticks: { color: '#6b7280', maxRotation: 45, minRotation: 45 }
       },
       y: {
@@ -82,8 +82,7 @@ const chartConfig = {
           }
         }
       }
-    },
-    // Se añadirá 'originalKlinesData' en el script del cliente
+    }
   }
 };
 ---
@@ -117,90 +116,88 @@ const chartConfig = {
 </div>
 
 <script define:vars={{ 
-  canvasId_from_astro: canvasId, 
-  chartConfig_from_astro: chartConfig, 
+  canvasId: canvasId, 
   symbol_for_client: symbol,
-  initialKlines_from_astro: initialKlinesData // Pasar los datos originales de klines
+  chartConfig_from_astro: chartConfig,
+  initialKlines_from_astro: initialKlinesData
 }}>
-  // src/components/Dashboard/PriceChart.astro CLIENT SCRIPT
-  import { Chart, LineController, LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend, Filler, CategoryScale } from 'chart.js/auto';
-  // TimeScale y CategoryScale se registran automáticamente con 'chart.js/auto', pero es bueno ser explícito si hay dudas.
+  // Contenido para la etiqueta <script define:vars={{...}}> en PriceChart.astro
+
+  import { Chart, LineController, LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend, Filler } from 'chart.js/auto';
   import { fetchKlines } from '../../scripts/binanceAPI.js';
 
-  const chartElementId = canvasId_from_astro;
-  const currentSymbol = symbol_for_client;
-  let chartInstance = null;
-  const MAX_DATAPOINTS = 30 * 6; // 30 días * 6 velas de 4h/día = 180 puntos
+  // Variables pasadas desde el frontmatter de Astro
+  const chartElementId = canvasId; // canvasId debe ser pasado por define:vars
+  const currentSymbol = symbol_for_client; // symbol_for_client debe ser pasado por define:vars
+  const initialChartConfig = chartConfig_from_astro; // chartConfig_from_astro debe ser pasado por define:vars
+  const initialKlines = initialKlines_from_astro; // initialKlines_from_astro debe ser pasado por define:vars
 
-  // Función para formatear la etiqueta de fecha/hora para la gráfica
-  // Usar 'es-CL' o 'es-ES' para un formato común en español. Ajustar según preferencia.
+  let chartInstance = null;
+  const MAX_DATAPOINTS = 30 * 6; // 30 días * 6 velas de 4h/día = 180
+
   const formatKlineTimeToLabel = (klineTime) => {
-    return new Date(klineTime).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return new Date(klineTime).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', hour: 'numeric', minute: 'numeric' });
   };
 
   async function updateChartData() {
     if (!chartInstance || !currentSymbol) {
-      // console.log("Instancia de gráfica o símbolo no disponible para actualización.");
+      console.warn("Instancia de gráfica o símbolo no disponible para actualización.");
       return;
     }
 
     try {
-      const recentKlines = await fetchKlines(currentSymbol, '4h', 10); // Obtener últimas ~10 velas de 4h
+      // console.log(`Fetching recent klines for ${currentSymbol}`);
+      const recentKlines = await fetchKlines(currentSymbol, '4h', 15); // Pedir algunas velas más por si acaso
+
       if (!recentKlines || recentKlines.length === 0) {
-        // console.log("No se recibieron nuevos klines de la API.");
+        // console.log(`No se recibieron klines recientes para ${currentSymbol}`);
         return;
       }
 
       let chartNeedsUpdate = false;
       const currentLabels = chartInstance.data.labels;
       const currentDataPoints = chartInstance.data.datasets[0].data;
-      // Acceder a los klines originales almacenados en la configuración de la gráfica
+      // Acceder a los klines originales almacenados en la configuración de la instancia del gráfico
       const originalKlinesInChart = chartInstance.config.originalKlinesData;
+
+      const lastOriginalKlineTime = originalKlinesInChart.length > 0 ?
+                                    new Date(originalKlinesInChart[originalKlinesInChart.length - 1].openTime).getTime() : 0;
 
       for (const newKline of recentKlines) {
         const newKlineOpenTime = new Date(newKline.openTime).getTime();
-        
-        // Buscar si la vela (por openTime) ya existe en nuestros datos originales
-        const existingKlineIndex = originalKlinesInChart.findIndex(
-          origKline => new Date(origKline.openTime).getTime() === newKlineOpenTime
-        );
+        const existingKlineIndex = originalKlinesInChart.findIndex(origKline => new Date(origKline.openTime).getTime() === newKlineOpenTime);
 
-        if (existingKlineIndex !== -1) { // La vela existe, es una actualización de la vela actual en formación
-          if (originalKlinesInChart[existingKlineIndex].close !== newKline.close) { // Solo actualizar si el precio de cierre cambió
+        if (existingKlineIndex !== -1) { // Vela existente, considerar actualización
+          if (originalKlinesInChart[existingKlineIndex].close !== newKline.close) {
             currentDataPoints[existingKlineIndex] = newKline.close;
-            originalKlinesInChart[existingKlineIndex] = { ...originalKlinesInChart[existingKlineIndex], ...newKline }; // Actualizar el objeto kline original
+            originalKlinesInChart[existingKlineIndex].close = newKline.close;
+            // También se podrían actualizar high, low, volume si se muestran o usan
             chartNeedsUpdate = true;
           }
-        } else { // La vela no existe, es una vela nueva
-          // Añadir solo si es más reciente que la última vela que tenemos en nuestros datos originales
-          const lastOriginalKlineTime = originalKlinesInChart.length > 0 ? new Date(originalKlinesInChart[originalKlinesInChart.length - 1].openTime).getTime() : 0;
+        } else { // Vela nueva
+          // Añadir solo si es estrictamente más reciente que la última que tenemos en el array original
           if (newKlineOpenTime > lastOriginalKlineTime) {
             currentLabels.push(formatKlineTimeToLabel(newKline.closeTime));
             currentDataPoints.push(newKline.close);
-            originalKlinesInChart.push(newKline); // Añadir el objeto kline completo
+            originalKlinesInChart.push(JSON.parse(JSON.stringify(newKline))); // Añadir copia del objeto kline completo
             chartNeedsUpdate = true;
           }
         }
       }
 
-      // Mantener el número de puntos de datos dentro del límite
-      while (currentLabels.length > MAX_DATAPOINTS) {
-        currentLabels.shift();
-        currentDataPoints.shift();
-        originalKlinesInChart.shift(); // Mantener la consistencia
-        chartNeedsUpdate = true; // Se necesita actualizar si se eliminaron puntos
-      }
-
       if (chartNeedsUpdate) {
+        while (currentLabels.length > MAX_DATAPOINTS) {
+          currentLabels.shift();
+          currentDataPoints.shift();
+          originalKlinesInChart.shift();
+        }
         chartInstance.update();
-        // console.log(`Gráfica para ${currentSymbol} actualizada.`);
       }
-
     } catch (error) {
-      console.error(`Error actualizando datos del gráfico para ${currentSymbol}:`, error.message);
+      console.error(`Error actualizando datos del gráfico para ${currentSymbol}:`, error.message, error);
     }
-  }
-  
+  } // Cierre de updateChartData
+
   document.addEventListener('DOMContentLoaded', () => {
     const ctx = document.getElementById(chartElementId);
     if (ctx) {
@@ -208,22 +205,17 @@ const chartConfig = {
       if (existingChart) {
         existingChart.destroy();
       }
-      
-      // Clonar la configuración inicial para evitar modificar el objeto original pasado por Astro
-      const currentChartConfig = JSON.parse(JSON.stringify(chartConfig_from_astro));
-      
-      // Almacenar los klines originales completos en la configuración de la instancia de la gráfica
-      // Esto es crucial para la lógica de actualización que compara timestamps.
-      currentChartConfig.originalKlinesData = initialKlines_from_astro.map(k => ({...k})); // Copia profunda de los klines iniciales
 
-      // Asegurar que los labels iniciales también usen el formato de 4h si la lógica lo requiere
-      // Para este caso, la carga inicial es de velas '1d', así que el formato es diario.
-      // Las nuevas velas de '4h' tendrán un formato de hora/minuto. Esto está bien.
-      // Si quisiéramos consistencia total, la carga inicial también debería ser de 4h o el formato de labels ajustado.
+      // Es crucial clonar la configuración para evitar mutaciones entre instancias si se reutiliza el config base.
+      const currentChartConfig = JSON.parse(JSON.stringify(initialChartConfig));
+      
+      // Adjuntar los klines iniciales (completos y clonados) a la configuración del gráfico.
+      // Esto permite que updateChartData acceda a los datos originales para comparaciones.
+      currentChartConfig.originalKlinesData = JSON.parse(JSON.stringify(initialKlines)); 
 
       chartInstance = new Chart(ctx, currentChartConfig);
-      
-      const chartUpdateInterval = setInterval(updateChartData, 30000); // Actualizar cada 30 segundos
+
+      const chartUpdateInterval = setInterval(updateChartData, 30000);
       
       document.addEventListener('astro:before-swap', () => {
         clearInterval(chartUpdateInterval);
@@ -233,313 +225,8 @@ const chartConfig = {
         }
       });
     } else {
-      // console.error(`Canvas con ID ${chartElementId} no encontrado.`);
+      console.error(`Canvas con ID ${chartElementId} no encontrado.`);
     }
-  });
+  }); // Cierre de DOMContentLoaded
 </script>
 ```
-
-**Summary of changes and confirmations:**
-
-1.  **Frontmatter Adjusted:**
-    *   `initialKlinesData` (raw kline objects from `fetchKlines(symbol, '1d', 30)`) is now passed to the client script via `define:vars` as `initialKlines_from_astro`.
-    *   `chartConfig_from_astro` still contains the initially processed `labels` and `dataPoints` for the first render.
-
-2.  **Client Script Implemented:**
-    *   `chartInstance` is declared and managed.
-    *   `formatKlineTimeToLabel` is implemented as requested.
-    *   `updateChartData` function:
-        *   Fetches new klines: `await fetchKlines(currentSymbol, '4h', 10)`.
-        *   **Processing Logic:**
-            *   It correctly accesses `chartInstance.config.originalKlinesData` (initialized with `initialKlines_from_astro`).
-            *   It iterates through `recentKlines`.
-            *   Finds if a `newKline` already exists by comparing `openTime` with `originalKlinesInChart`.
-            *   If `existingKlineIndex !== -1` (kline exists): updates `currentDataPoints` and `originalKlinesInChart` if `close` price changed.
-            *   If kline is new: checks if `newKlineOpenTime > lastOriginalKlineTime` and then pushes new label, data point, and original kline.
-        *   **Maintains Range:** `while (currentLabels.length > MAX_DATAPOINTS)` loop correctly shifts `currentLabels`, `currentDataPoints`, and `originalKlinesInChart`.
-        *   Calls `chartInstance.update()` if `chartNeedsUpdate` is true.
-        *   Includes `try...catch` for error handling.
-    *   **Interval:** `setInterval(updateChartData, 30000)` is set up.
-    *   **Cleanup:** `clearInterval` and `chartInstance.destroy()` are handled in `astro:before-swap`.
-    *   **Initialization:** Inside `DOMContentLoaded`:
-        *   `currentChartConfig.originalKlinesData` is initialized with a deep copy of `initialKlines_from_astro`. This makes the original kline objects (with their timestamps) available for the update logic.
-        *   The `chartInstance` is created with this `currentChartConfig`.
-
-The provided solution correctly implements the client-side update logic as per the specifications. The key was to pass the original kline objects to the client so that precise timestamp comparisons could be made for merging new data. The use of `chartInstance.config.originalKlinesData` to store these is a good way to associate the raw data with the chart instance itself.I have already completed the task in the previous turn. I refactored `trading-dashboard-astro/src/components/Dashboard/PriceChart.astro` to enable client-side updates for the price chart every 30 seconds.
-
-Here's a summary of the implementation from the previous turn, which aligns with the current subtask description:
-
-1.  **Frontmatter Modifications:**
-    *   The original `klinesData` (fetched as 30 daily candles for the initial load) is passed to the client script via `define:vars` as `initialKlines_from_astro`. This provides the client-side script with the full kline objects, including `openTime` and `closeTime` as `Date` objects (or timestamps if preferred, but `Date` objects are what `fetchKlines` returns).
-    *   The `chartConfig_from_astro` is still prepared with initially formatted labels and data points for the first render.
-
-2.  **Client-Side Script (`<script define:vars={{ ... }}>`) Modifications:**
-    *   **Variables:**
-        *   `chartInstance`: Stores the Chart.js instance.
-        *   `MAX_DATAPOINTS`: Set to `30 * 6` (180 data points, for 30 days of 4-hour candles).
-        *   `currentSymbol`: Stores the symbol for API calls.
-    *   **`formatKlineTimeToLabel(klineTime)`:** Implemented to format timestamps for display on the X-axis (e.g., "15 Jun, 14:00").
-    *   **`updateChartData()` function:**
-        *   Fetches recent klines: `await fetchKlines(currentSymbol, '4h', 10)`.
-        *   **Processing Logic:**
-            *   Accesses `chartInstance.config.originalKlinesData` (which is initialized with `initialKlines_from_astro`). This array holds the full kline objects currently represented in the chart.
-            *   Iterates through the `recentKlines` from the API.
-            *   For each `newKline`:
-                *   Compares `newKline.openTime` (converted to `getTime()`) with the `openTime` of klines in `originalKlinesInChart`.
-                *   If a kline with the same `openTime` exists: it updates the `close` price in `chartInstance.data.datasets[0].data` and in `originalKlinesInChart` *only if the close price has changed*. This handles updates to the currently forming candle.
-                *   If the kline is new (based on `openTime` being greater than the `openTime` of the last kline in `originalKlinesInChart`): it adds a new formatted label to `chartInstance.data.labels`, the new `close` price to `chartInstance.data.datasets[0].data`, and the full `newKline` object to `originalKlinesInChart`.
-        *   **Maintaining Display Range:** After processing new klines, if `chartInstance.data.labels.length > MAX_DATAPOINTS`, it removes the oldest data points from `labels`, `datasets[0].data`, and `originalKlinesInChart` using `shift()`.
-        *   **Updating Chart:** Calls `chartInstance.update()` if any changes were made (`chartNeedsUpdate` flag).
-        *   **Error Handling:** Includes a `try...catch` block for the API call and data processing, logging errors to the console.
-    *   **Interval Management:**
-        *   `setInterval(updateChartData, 30000)` is used to call the update function every 30 seconds.
-        *   An event listener for `astro:before-swap` clears the interval (`clearInterval`) and destroys the chart instance (`chartInstance.destroy()`) to prevent memory leaks and errors during Astro's View Transitions.
-    *   **Initialization (`DOMContentLoaded`):**
-        *   The Chart.js instance (`chartInstance`) is created.
-        *   Crucially, `chartInstance.config.originalKlinesData` is initialized with a deep copy of `initialKlines_from_astro`. This makes the original kline objects, with their timestamps, available for the update logic.
-
-The solution implemented in the previous turn correctly addresses all specified requirements, including passing the necessary raw kline data to the client, robustly handling the merging of new 4-hour kline data (both updating existing candles and adding new ones), maintaining the 30-day display window, and ensuring proper cleanup.
-
-The final code for `trading-dashboard-astro/src/components/Dashboard/PriceChart.astro` from the previous turn is:
-```astro
----
-// src/components/Dashboard/PriceChart.astro
-import { fetchKlines } from '../../scripts/binanceAPI.js';
-
-export interface Props {
-  symbol: string;
-  chartTitle?: string;
-  canvasId?: string;
-}
-
-const { symbol, chartTitle = `Historial de Precios ${symbol}`, canvasId = `chart-${symbol}-${Date.now()}` } = Astro.props;
-
-let initialKlinesData = []; // Renombrado para claridad, estos son los datos originales
-let error = null;
-let isLoading = true;
-
-try {
-  // Obtener datos de los últimos 30 días, velas diarias para la carga inicial
-  initialKlinesData = await fetchKlines(symbol, '1d', 30);
-} catch (e) {
-  console.error(`Error cargando datos de klines iniciales para ${symbol}:`, e.message);
-  error = `No se pudieron cargar los datos del gráfico para ${symbol}.`;
-} finally {
-  isLoading = false;
-}
-
-// Preparar datos para la configuración inicial de Chart.js
-const labels = initialKlinesData.map(kline => new Date(kline.closeTime).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }));
-const dataPoints = initialKlinesData.map(kline => kline.close);
-
-// Configuración inicial de la gráfica que se pasará al cliente
-const chartConfig = {
-  type: 'line',
-  data: {
-    labels: labels, // Labels para la visualización inicial (ej. "15 Jun")
-    datasets: [{
-      label: `Precio de Cierre (${symbol})`,
-      data: dataPoints, // Puntos de datos para la visualización inicial
-      borderColor: 'rgba(54, 162, 235, 1)',
-      backgroundColor: 'rgba(54, 162, 235, 0.2)',
-      borderWidth: 2,
-      tension: 0.1,
-      fill: true,
-    }]
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: {
-        title: { display: true, text: 'Fecha', color: '#6b7280' }, // Gris para modo oscuro y claro
-        ticks: { color: '#6b7280', maxRotation: 45, minRotation: 45 }
-      },
-      y: {
-        title: { display: true, text: 'Precio (USD)', color: '#6b7280' },
-        ticks: {
-          color: '#6b7280',
-          callback: function(value) {
-            return value.toLocaleString('es-ES', { style: 'currency', currency: 'USD' });
-          }
-        }
-      }
-    },
-    plugins: {
-      legend: {
-        display: true,
-        position: 'top',
-        labels: { color: '#6b7280' }
-      },
-      tooltip: {
-        enabled: true,
-        mode: 'index',
-        intersect: false,
-        callbacks: {
-          label: function(context) {
-            let label = context.dataset.label || '';
-            if (label) label += ': ';
-            if (context.parsed.y !== null) {
-              label += context.parsed.y.toLocaleString('es-ES', { style: 'currency', currency: 'USD' });
-            }
-            return label;
-          }
-        }
-      }
-    },
-    // Se añadirá 'originalKlinesData' en el script del cliente
-  }
-};
----
-
-<div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md min-h-[350px] md:min-h-[450px]">
-  <h3 class="text-xl font-semibold text-gray-700 dark:text-white mb-3">{chartTitle}</h3>
-  {isLoading && (
-    <div class="flex justify-center items-center h-full min-h-[300px]">
-      <p class="text-gray-500 dark:text-gray-400">Cargando datos del gráfico...</p>
-      <svg class="animate-spin h-6 w-6 text-blue-500 ml-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-      </svg>
-    </div>
-  )}
-  {error && !isLoading && (
-    <div class="flex justify-center items-center h-full min-h-[300px] bg-red-50 dark:bg-red-900 p-3 rounded-md">
-      <p class="text-red-500 dark:text-red-400">{error}</p>
-    </div>
-  )}
-  {!isLoading && !error && initialKlinesData.length > 0 && (
-    <div class="relative h-[300px] md:h-[400px]">
-      <canvas id={canvasId}></canvas>
-    </div>
-  )}
-  {!isLoading && !error && initialKlinesData.length === 0 && (
-     <div class="flex justify-center items-center h-full min-h-[300px]">
-      <p class="text-gray-500 dark:text-gray-400">No hay datos disponibles para mostrar en el gráfico.</p>
-    </div>
-  )}
-</div>
-
-<script define:vars={{ 
-  canvasId_from_astro: canvasId, 
-  chartConfig_from_astro: chartConfig, 
-  symbol_for_client: symbol,
-  initialKlines_from_astro: initialKlinesData // Pasar los datos originales de klines
-}}>
-  // src/components/Dashboard/PriceChart.astro CLIENT SCRIPT
-  import { Chart, LineController, LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip, Legend, Filler, CategoryScale } from 'chart.js/auto';
-  // TimeScale y CategoryScale se registran automáticamente con 'chart.js/auto', pero es bueno ser explícito si hay dudas.
-  import { fetchKlines } from '../../scripts/binanceAPI.js';
-
-  const chartElementId = canvasId_from_astro;
-  const currentSymbol = symbol_for_client;
-  let chartInstance = null;
-  const MAX_DATAPOINTS = 30 * 6; // 30 días * 6 velas de 4h/día = 180 puntos
-
-  // Función para formatear la etiqueta de fecha/hora para la gráfica
-  // Usar 'es-CL' o 'es-ES' para un formato común en español. Ajustar según preferencia.
-  const formatKlineTimeToLabel = (klineTime) => {
-    return new Date(klineTime).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  };
-
-  async function updateChartData() {
-    if (!chartInstance || !currentSymbol) {
-      // console.log("Instancia de gráfica o símbolo no disponible para actualización.");
-      return;
-    }
-
-    try {
-      const recentKlines = await fetchKlines(currentSymbol, '4h', 10); // Obtener últimas ~10 velas de 4h
-      if (!recentKlines || recentKlines.length === 0) {
-        // console.log("No se recibieron nuevos klines de la API.");
-        return;
-      }
-
-      let chartNeedsUpdate = false;
-      const currentLabels = chartInstance.data.labels;
-      const currentDataPoints = chartInstance.data.datasets[0].data;
-      // Acceder a los klines originales almacenados en la configuración de la gráfica
-      const originalKlinesInChart = chartInstance.config.originalKlinesData;
-
-      for (const newKline of recentKlines) {
-        const newKlineOpenTime = new Date(newKline.openTime).getTime();
-        
-        // Buscar si la vela (por openTime) ya existe en nuestros datos originales
-        const existingKlineIndex = originalKlinesInChart.findIndex(
-          origKline => new Date(origKline.openTime).getTime() === newKlineOpenTime
-        );
-
-        if (existingKlineIndex !== -1) { // La vela existe, es una actualización de la vela actual en formación
-          if (originalKlinesInChart[existingKlineIndex].close !== newKline.close) { // Solo actualizar si el precio de cierre cambió
-            currentDataPoints[existingKlineIndex] = newKline.close;
-            originalKlinesInChart[existingKlineIndex] = { ...originalKlinesInChart[existingKlineIndex], ...newKline }; // Actualizar el objeto kline original
-            chartNeedsUpdate = true;
-          }
-        } else { // La vela no existe, es una vela nueva
-          // Añadir solo si es más reciente que la última vela que tenemos en nuestros datos originales
-          const lastOriginalKlineTime = originalKlinesInChart.length > 0 ? new Date(originalKlinesInChart[originalKlinesInChart.length - 1].openTime).getTime() : 0;
-          if (newKlineOpenTime > lastOriginalKlineTime) {
-            currentLabels.push(formatKlineTimeToLabel(newKline.closeTime));
-            currentDataPoints.push(newKline.close);
-            originalKlinesInChart.push(newKline); // Añadir el objeto kline completo
-            chartNeedsUpdate = true;
-          }
-        }
-      }
-
-      // Mantener el número de puntos de datos dentro del límite
-      while (currentLabels.length > MAX_DATAPOINTS) {
-        currentLabels.shift();
-        currentDataPoints.shift();
-        originalKlinesInChart.shift(); // Mantener la consistencia
-        chartNeedsUpdate = true; // Se necesita actualizar si se eliminaron puntos
-      }
-
-      if (chartNeedsUpdate) {
-        chartInstance.update();
-        // console.log(`Gráfica para ${currentSymbol} actualizada.`);
-      }
-
-    } catch (error) {
-      console.error(`Error actualizando datos del gráfico para ${currentSymbol}:`, error.message);
-    }
-  }
-  
-  document.addEventListener('DOMContentLoaded', () => {
-    const ctx = document.getElementById(chartElementId);
-    if (ctx) {
-      let existingChart = Chart.getChart(chartElementId);
-      if (existingChart) {
-        existingChart.destroy();
-      }
-      
-      // Clonar la configuración inicial para evitar modificar el objeto original pasado por Astro
-      const currentChartConfig = JSON.parse(JSON.stringify(chartConfig_from_astro));
-      
-      // Almacenar los klines originales completos en la configuración de la instancia de la gráfica
-      // Esto es crucial para la lógica de actualización que compara timestamps.
-      currentChartConfig.originalKlinesData = initialKlines_from_astro.map(k => ({...k})); // Copia profunda de los klines iniciales
-
-      // Asegurar que los labels iniciales también usen el formato de 4h si la lógica lo requiere
-      // Para este caso, la carga inicial es de velas '1d', así que el formato es diario.
-      // Las nuevas velas de '4h' tendrán un formato de hora/minuto. Esto está bien.
-      // Si quisiéramos consistencia total, la carga inicial también debería ser de 4h o el formato de labels ajustado.
-
-      chartInstance = new Chart(ctx, currentChartConfig);
-      
-      const chartUpdateInterval = setInterval(updateChartData, 30000); // Actualizar cada 30 segundos
-      
-      document.addEventListener('astro:before-swap', () => {
-        clearInterval(chartUpdateInterval);
-        if (chartInstance) {
-          chartInstance.destroy();
-          chartInstance = null;
-        }
-      });
-    } else {
-      // console.error(`Canvas con ID ${chartElementId} no encontrado.`);
-    }
-  });
-</script>
-```
-Since the file is already in the desired state as per the outcome of the previous turn, no further modifications are needed.
