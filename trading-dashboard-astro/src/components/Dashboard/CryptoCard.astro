@@ -3,6 +3,18 @@
 import { getTicker24hr, fetchKlines } from '../../scripts/binanceAPI.js';
 import { calculateSMA, calculateRSI, calculateMACD } from '../../scripts/technicalIndicators.js';
 
+/**
+ * @typedef {import('../../scripts/binanceAPI.js').Ticker24hrData} Ticker24hrData
+ * @typedef {import('../../scripts/binanceAPI.js').KlineObject} KlineObject
+ */
+
+/**
+ * @typedef {object} MACDValues
+ * @property {number | null} macdLine
+ * @property {number | null} signalLine
+ * @property {number | null} histogram
+ */
+
 export interface Props {
   coinName: string; // Nombre legible, ej: "Bitcoin"
   symbol: string;   // Símbolo para la API, ej: "BTCUSDT"
@@ -12,20 +24,27 @@ export interface Props {
 const { coinName, symbol, iconUrl } = Astro.props;
 
 // Estado para los datos del ticker 24hr
-let tickerData;
+/** @type {Ticker24hrData | null} */
+let tickerData = null;
+/** @type {string | null} */
 let tickerError = null;
 let isLoadingTicker = true;
 
 // Estado para los datos de klines e indicadores
+/** @type {KlineObject[]} */
 let klinesData = [];
+/** @type {string | null} */
 let klinesError = null;
 let isLoadingKlines = true; 
 let klinesDataLoaded = false;
 
 // Variables para los indicadores
+/** @type {number | null} */
 let currentSMA20 = null;
+/** @type {number | null} */
 let currentRSI14 = null;
-let currentMACD = { macdLine: null, signalLine: null, histogram: null };
+/** @type {MACDValues | null} */
+let currentMACD = null;
 
 try {
   tickerData = await getTicker24hr(symbol);
@@ -39,26 +58,25 @@ try {
 if (!tickerError) {
   try {
     const rawKlines = await fetchKlines(symbol, '1d', 100); 
-    klinesData = rawKlines;
+    klinesData = rawKlines; // klinesData es ahora KlineObject[]
 
     if (klinesData.length > 0) {
-      const closePrices = klinesData.map(k => k.close);
+      const closePrices = klinesData.map(k => k.close); // closePrices es number[]
 
       const sma20Values = calculateSMA(closePrices, 20);
-      if (sma20Values.length > 0) {
-        currentSMA20 = sma20Values[sma20Values.length - 1];
-      }
+      currentSMA20 = sma20Values.length > 0 ? sma20Values[sma20Values.length - 1] : null;
 
       const rsi14Values = calculateRSI(closePrices, 14);
-      if (rsi14Values.length > 0) {
-        currentRSI14 = rsi14Values[rsi14Values.length - 1];
-      }
-
+      currentRSI14 = rsi14Values.length > 0 ? rsi14Values[rsi14Values.length - 1] : null;
+      
       const macdResult = calculateMACD(closePrices, 12, 26, 9);
-      if (macdResult.macdLine.length > 0) {
-        currentMACD.macdLine = macdResult.macdLine[macdResult.macdLine.length - 1];
-        currentMACD.signalLine = macdResult.signalLine[macdResult.signalLine.length - 1];
-        currentMACD.histogram = macdResult.histogram[macdResult.histogram.length - 1];
+      // macdResult es { macdLine: number[], signalLine: number[], histogram: number[] }
+      if (macdResult && macdResult.macdLine.length > 0 && macdResult.signalLine.length > 0 && macdResult.histogram.length > 0) {
+        currentMACD = {
+          macdLine: macdResult.macdLine[macdResult.macdLine.length - 1],
+          signalLine: macdResult.signalLine[macdResult.signalLine.length - 1],
+          histogram: macdResult.histogram[macdResult.histogram.length - 1]
+        };
       }
       klinesDataLoaded = true;
     } else {
@@ -86,7 +104,7 @@ const changeIcon = isPositiveChange === null ? '' : (isPositiveChange ? '▲' : 
 const changeColorClass = isPositiveChange === null ? 'text-gray-500 dark:text-gray-400' : (isPositiveChange ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400');
 const formattedPriceChange = tickerData?.priceChange !== undefined && tickerData?.priceChange !== null ? formatPrice(tickerData.priceChange) : 'N/A';
 
-const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || currentMACD.macdLine !== null;
+const hasAnyIndicator = currentSMA20 !== null || currentRSI14 !== null || (currentMACD && currentMACD.macdLine !== null);
 
 // Generar IDs únicos para los elementos que se actualizarán en el cliente
 const priceId = `price-${symbol}`;
@@ -225,7 +243,7 @@ const priceChangeIconId = `price-change-icon-${symbol}`;
 </style>
 
 <script define:vars={{ 
-  symbol_for_client: symbol, // Renombrado para evitar conflicto con la variable 'symbol' de JS
+  symbol_for_client: symbol,
   priceId,
   priceChangeIndicatorId,
   priceChangePercentTextId,
@@ -235,7 +253,6 @@ const priceChangeIconId = `price-change-icon-${symbol}`;
   // src/components/Dashboard/CryptoCard.astro CLIENT SCRIPT
   import { getTicker24hr } from '../../scripts/binanceAPI.js';
 
-  // Los IDs son pasados directamente desde define:vars
   const priceEl = document.getElementById(priceId);
   const priceChangeIndicatorContainerEl = document.getElementById(priceChangeIndicatorId);
   const priceChangePercentTextEl = document.getElementById(priceChangePercentTextId);
@@ -243,15 +260,13 @@ const priceChangeIconId = `price-change-icon-${symbol}`;
   const priceChangeIconEl = document.getElementById(priceChangeIconId);
 
   const formatPriceForClient = (priceStr, currency = 'USD') => {
-    const price = parseFloat(priceStr); // El precio de la API es string
+    const price = parseFloat(priceStr);
     if (price === undefined || price === null || isNaN(price)) return 'N/A';
     return price.toLocaleString('es-ES', { style: 'currency', currency: currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
   
   async function updatePriceDisplay() {
     if (!symbol_for_client || !priceEl || !priceChangePercentTextEl || !priceChangeValueEl || !priceChangeIndicatorContainerEl || !priceChangeIconEl) {
-      // console.warn(`Elementos del DOM no encontrados para ${symbol_for_client}, deteniendo actualizaciones.`);
-      // clearInterval(priceUpdateInterval); // Opcional: detener si los elementos no están.
       return;
     }
 
@@ -259,10 +274,8 @@ const priceChangeIconId = `price-change-icon-${symbol}`;
       const newData = await getTicker24hr(symbol_for_client);
       if (!newData) return;
 
-      // Actualizar precio
       priceEl.textContent = formatPriceForClient(newData.lastPrice);
 
-      // Actualizar cambio de precio
       const newPriceChangePercent = parseFloat(newData.priceChangePercent);
       const newIsPositiveChange = newPriceChangePercent >= 0;
       const newChangeIcon = newIsPositiveChange ? '▲' : '▼';
@@ -271,7 +284,6 @@ const priceChangeIconId = `price-change-icon-${symbol}`;
       priceChangePercentTextEl.textContent = `${newPriceChangePercent.toFixed(2)}%`;
       priceChangeValueEl.textContent = `(${formatPriceForClient(newData.priceChange)})`;
 
-      // Actualizar clases de color del contenedor del indicador
       const colorClassesToRemove = ['text-green-500', 'dark:text-green-400', 'text-red-500', 'dark:text-red-400', 'text-gray-500', 'dark:text-gray-400'];
       priceChangeIndicatorContainerEl.classList.remove(...colorClassesToRemove);
       
@@ -283,23 +295,13 @@ const priceChangeIconId = `price-change-icon-${symbol}`;
 
     } catch (error) {
       console.error(`Error actualizando datos para ${symbol_for_client} en cliente:`, error.message);
-      // Considerar un indicador visual de error más sutil si las actualizaciones fallan.
-      // Por ejemplo, cambiar el color del precio a un gris tenue o añadir un pequeño icono de advertencia.
     }
   }
 
-  // Iniciar actualizaciones periódicas.
-  // Se llama una vez al inicio para asegurar que los datos estén lo más actualizados posible,
-  // especialmente si la generación de la página (SSG) fue hace tiempo.
-  // Sin embargo, esto puede causar un pequeño "flash" si los datos cambiaron justo entre el renderizado del servidor y esta llamada.
-  // updatePriceDisplay(); // Opcional: llamar al inicio
+  const priceUpdateInterval = setInterval(updatePriceDisplay, 5000);
 
-  const priceUpdateInterval = setInterval(updatePriceDisplay, 5000); // Actualiza cada 5 segundos
-
-  // Limpieza para Astro View Transitions
-  // Si se usan View Transitions, es importante limpiar los intervalos para evitar múltiples
-  // intervalos ejecutándose para el mismo componente si se navega hacia adelante y atrás.
   document.addEventListener('astro:before-swap', () => {
     clearInterval(priceUpdateInterval);
   });
 </script>
+```
