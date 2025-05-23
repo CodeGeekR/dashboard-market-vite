@@ -2,6 +2,17 @@
 // src/components/Dashboard/PriceChart.astro
 import { fetchKlines } from '../../scripts/binanceAPI.js';
 
+/**
+ * @typedef {import('../../scripts/binanceAPI.js').KlineObject} KlineObject
+ */
+
+/**
+ * Props para el componente PriceChart.
+ * @typedef {object} Props
+ * @property {string} symbol - El símbolo del par de trading (ej. 'BTCUSDT').
+ * @property {string} [chartTitle] - Título opcional para la gráfica.
+ * @property {string} [canvasId] - ID opcional para el elemento canvas (se genera uno si no se provee).
+ */
 export interface Props {
   symbol: string;
   chartTitle?: string;
@@ -10,32 +21,40 @@ export interface Props {
 
 const { symbol, chartTitle = `Historial de Precios ${symbol}`, canvasId = `chart-${symbol}-${Date.now()}` } = Astro.props;
 
-let initialKlinesData = []; // Datos originales para la carga inicial
+/** @type {KlineObject[]} */
+let initialKlinesData = [];
+/** @type {string | null} */
 let error = null;
 let isLoading = true;
 
 try {
-  // Obtener datos de los últimos 30 días, velas diarias para la carga inicial
-  initialKlinesData = await fetchKlines(symbol, '1d', 30);
+  // Obtener datos de los últimos 30 días, con velas de 4 horas (30 días * 6 velas/día = 180 velas)
+  initialKlinesData = await fetchKlines(symbol, '4h', 180);
 } catch (e) {
-  console.error(`Error cargando datos de klines iniciales para ${symbol}:`, e.message);
+  console.error(`Error cargando datos de klines iniciales para ${symbol} ('4h', 180):`, e.message);
   error = `No se pudieron cargar los datos del gráfico para ${symbol}.`;
 } finally {
   isLoading = false;
 }
 
 // Preparar datos para la configuración inicial de Chart.js
-const labels = initialKlinesData.map(kline => new Date(kline.closeTime).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }));
+/** @type {string[]} */
+const labels = initialKlinesData.map(kline => 
+  new Date(kline.closeTime).toLocaleDateString('es-ES', { 
+    day: 'numeric', month: 'short', hour: 'numeric', minute: 'numeric' 
+  })
+);
+/** @type {number[]} */
 const dataPoints = initialKlinesData.map(kline => kline.close);
 
 // Configuración inicial de la gráfica que se pasará al cliente
 const chartConfig = {
   type: 'line',
   data: {
-    labels: labels,
+    labels: labels, // string[]
     datasets: [{
       label: `Precio de Cierre (${symbol})`,
-      data: dataPoints,
+      data: dataPoints, // number[]
       borderColor: 'rgba(54, 162, 235, 1)',
       backgroundColor: 'rgba(54, 162, 235, 0.2)',
       borderWidth: 2,
@@ -48,7 +67,7 @@ const chartConfig = {
     maintainAspectRatio: false,
     scales: {
       x: {
-        title: { display: true, text: 'Fecha', color: '#6b7280' },
+        title: { display: true, text: 'Fecha y Hora', color: '#6b7280' }, // Actualizado el texto del eje X
         ticks: { color: '#6b7280', maxRotation: 45, minRotation: 45 }
       },
       y: {
@@ -83,7 +102,10 @@ const chartConfig = {
         }
       }
     }
-  }
+  },
+  // Adjuntar los klines originales para uso en el script del cliente
+  // Esta es la propiedad que el script del cliente espera
+  originalKlinesData: initialKlinesData // KlineObject[]
 };
 ---
 
@@ -118,8 +140,8 @@ const chartConfig = {
 <script define:vars={{ 
   canvasId: canvasId, 
   symbol_for_client: symbol,
-  chartConfig_from_astro: chartConfig,
-  initialKlines_from_astro: initialKlinesData
+  chartConfig_from_astro: chartConfig, // chartConfig ahora incluye originalKlinesData
+  initialKlines_from_astro: initialKlinesData // Se sigue pasando por si el script lo usa directamente, aunque ahora está en chartConfig
 }}>
   // Contenido para la etiqueta <script define:vars={{...}}> en PriceChart.astro
 
@@ -127,10 +149,11 @@ const chartConfig = {
   import { fetchKlines } from '../../scripts/binanceAPI.js';
 
   // Variables pasadas desde el frontmatter de Astro
-  const chartElementId = canvasId; // canvasId debe ser pasado por define:vars
-  const currentSymbol = symbol_for_client; // symbol_for_client debe ser pasado por define:vars
-  const initialChartConfig = chartConfig_from_astro; // chartConfig_from_astro debe ser pasado por define:vars
-  const initialKlines = initialKlines_from_astro; // initialKlines_from_astro debe ser pasado por define:vars
+  const chartElementId = canvasId; 
+  const currentSymbol = symbol_for_client; 
+  const initialChartConfig = chartConfig_from_astro; 
+  // initialKlines ahora está dentro de initialChartConfig.originalKlinesData
+  // const initialKlines = initialKlines_from_astro; // Ya no es estrictamente necesario si se accede desde initialChartConfig
 
   let chartInstance = null;
   const MAX_DATAPOINTS = 30 * 6; // 30 días * 6 velas de 4h/día = 180
@@ -146,19 +169,16 @@ const chartConfig = {
     }
 
     try {
-      // console.log(`Fetching recent klines for ${currentSymbol}`);
-      const recentKlines = await fetchKlines(currentSymbol, '4h', 15); // Pedir algunas velas más por si acaso
+      const recentKlines = await fetchKlines(currentSymbol, '4h', 15); 
 
       if (!recentKlines || recentKlines.length === 0) {
-        // console.log(`No se recibieron klines recientes para ${currentSymbol}`);
         return;
       }
 
       let chartNeedsUpdate = false;
       const currentLabels = chartInstance.data.labels;
       const currentDataPoints = chartInstance.data.datasets[0].data;
-      // Acceder a los klines originales almacenados en la configuración de la instancia del gráfico
-      const originalKlinesInChart = chartInstance.config.originalKlinesData;
+      const originalKlinesInChart = chartInstance.config.originalKlinesData; // Acceder desde la config
 
       const lastOriginalKlineTime = originalKlinesInChart.length > 0 ?
                                     new Date(originalKlinesInChart[originalKlinesInChart.length - 1].openTime).getTime() : 0;
@@ -167,19 +187,17 @@ const chartConfig = {
         const newKlineOpenTime = new Date(newKline.openTime).getTime();
         const existingKlineIndex = originalKlinesInChart.findIndex(origKline => new Date(origKline.openTime).getTime() === newKlineOpenTime);
 
-        if (existingKlineIndex !== -1) { // Vela existente, considerar actualización
+        if (existingKlineIndex !== -1) { 
           if (originalKlinesInChart[existingKlineIndex].close !== newKline.close) {
             currentDataPoints[existingKlineIndex] = newKline.close;
             originalKlinesInChart[existingKlineIndex].close = newKline.close;
-            // También se podrían actualizar high, low, volume si se muestran o usan
             chartNeedsUpdate = true;
           }
-        } else { // Vela nueva
-          // Añadir solo si es estrictamente más reciente que la última que tenemos en el array original
+        } else { 
           if (newKlineOpenTime > lastOriginalKlineTime) {
             currentLabels.push(formatKlineTimeToLabel(newKline.closeTime));
             currentDataPoints.push(newKline.close);
-            originalKlinesInChart.push(JSON.parse(JSON.stringify(newKline))); // Añadir copia del objeto kline completo
+            originalKlinesInChart.push(JSON.parse(JSON.stringify(newKline))); 
             chartNeedsUpdate = true;
           }
         }
@@ -196,7 +214,7 @@ const chartConfig = {
     } catch (error) {
       console.error(`Error actualizando datos del gráfico para ${currentSymbol}:`, error.message, error);
     }
-  } // Cierre de updateChartData
+  } 
 
   document.addEventListener('DOMContentLoaded', () => {
     const ctx = document.getElementById(chartElementId);
@@ -206,12 +224,12 @@ const chartConfig = {
         existingChart.destroy();
       }
 
-      // Es crucial clonar la configuración para evitar mutaciones entre instancias si se reutiliza el config base.
+      // Usar la configuración directamente, ya que ahora contiene originalKlinesData
       const currentChartConfig = JSON.parse(JSON.stringify(initialChartConfig));
-      
-      // Adjuntar los klines iniciales (completos y clonados) a la configuración del gráfico.
-      // Esto permite que updateChartData acceda a los datos originales para comparaciones.
-      currentChartConfig.originalKlinesData = JSON.parse(JSON.stringify(initialKlines)); 
+      // Ya no es necesario asignar currentChartConfig.originalKlinesData aquí si se incluyó en el frontmatter.
+      // Solo asegurarse de que initialChartConfig (chartConfig_from_astro) ya lo tiene.
+      // Si initialKlines_from_astro todavía se pasa y se prefiere usarlo para claridad:
+      // currentChartConfig.originalKlinesData = JSON.parse(JSON.stringify(initialKlines_from_astro));
 
       chartInstance = new Chart(ctx, currentChartConfig);
 
@@ -227,6 +245,6 @@ const chartConfig = {
     } else {
       console.error(`Canvas con ID ${chartElementId} no encontrado.`);
     }
-  }); // Cierre de DOMContentLoaded
+  }); 
 </script>
 ```
